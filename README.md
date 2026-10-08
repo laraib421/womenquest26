@@ -1,58 +1,60 @@
-# AI Challenge Starter
+# AI Challenge Starter (WTQ 2026)
 
-A multi-provider LLM starter template in Python that automatically falls back across **Groq**, **Gemini**, and **OpenRouter** APIs.
+A small Python wrapper around **Gemini** for the Women Tech Quest 2026 "Build with AI" challenge.
 
-## 🚀 Features
+Model: `gemini-3.5-flash-lite` (allowed model; `gemini-3.1-flash-lite` is also allowed).
 
-- **Multi-Provider Resilience**: Tries LLM providers in sequence (`Groq` ➔ `Gemini` ➔ `OpenRouter`).
-- **Automatic Fallback**: Seamlessly switches to the next provider on API errors, rate limits, or quota issues.
-- **JSON Schema Validation**: Standardized JSON output extraction with optional Pydantic schema validation.
-- **Environment Configured**: Easy setup via `.env` file.
-
-## 📁 Project Structure
+## Project Structure
 
 ```
 .
-├── llm.py          # Core LLM wrapper supporting fallback execution & JSON parsing
-├── .env            # API keys and provider model configurations
-├── .env.example    # Template for environment variables
-└── README.md       # Project documentation
+├── llm.py            # ask() and ask_json() helpers (Gemini only)
+├── check_setup.py    # pre-event readiness check
+├── requirements.txt  # Python packages
+├── .env              # your API key (git-ignored, never submit)
+├── .env.example      # template for .env
+└── README.md
 ```
 
-## 🛠️ Getting Started
-
-### 1. Environment Setup
-
-Copy `.env.example` to `.env` and insert your API keys:
+## Setup
 
 ```bash
-GROQ_API_KEY=your_groq_api_key
-GEMINI_API_KEY=your_gemini_api_key
-OPENROUTER_API_KEY=your_openrouter_api_key
-
-GROQ_MODEL=llama-3.3-70b-versatile
-GEMINI_MODEL=gemini-2.0-flash
-OPENROUTER_MODEL=openai/gpt-oss-120b
-
-PROVIDER_ORDER=groq,gemini,openrouter
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
 ```
 
-### 2. Usage
+Copy `.env.example` to `.env` and add your key from https://aistudio.google.com:
 
-Import and call `ask` or `ask_json` in Python:
+```
+GEMINI_API_KEY=your_gemini_api_key
+GEMINI_MODEL=gemini-3.5-flash-lite
+```
+
+Check everything is ready:
+
+```bash
+python check_setup.py
+```
+
+## Usage
 
 ```python
 from llm import ask, ask_json
 
-# Text generation
-response = ask("Explain quantum computing in one sentence.")
-print(response)
+print(ask("Explain quantum computing in one sentence."))
 
-# Structured JSON response
-data = ask_json("List 3 primary colors in JSON format under key 'colors'")
+data = ask_json("List 3 primary colors under key 'colors'")
 print(data)
 ```
 
-## 📄 License
+`ask_json` accepts an optional pydantic model: `ask_json(prompt, schema=MyModel)`.
+
+## Notes
+
+- Free tier limits: 15 requests/min, 500 requests/day.
+- Never commit `.env` or paste the key in code.
+
+## License
 
 MIT License
