@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bill Decoder</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="mark">⚡</span> Bill Decoder</div>
+    <div class="sub">Upload an electricity bill · get the breakdown · ask questions</div>
+  </header>
+
+  <main>
+    <section class="panel upload-panel" id="uploadPanel">
+      <div class="drop" id="drop">
+        <div class="bolt">⚡</div>
+        <h2>Drop a bill image here</h2>
+        <p class="muted">KE, LESCO or IESCO · PNG or JPG</p>
+        <label class="btn primary">Choose file<input type="file" id="fileInput" accept=".png,.jpg,.jpeg" hidden></label>
+      </div>
+    </section>
+
+    <section class="workspace hidden" id="workspace">
+      <div class="col-image">
+        <div class="panel">
+          <img id="billImg" alt="Bill preview">
+        </div>
+        <button class="btn ghost full" id="resetBtn">Upload a different bill</button>
+      </div>
+
+      <div class="col-data">
+        <div class="panel" id="loadingPanel">
+          <div class="loader"></div>
+          <p class="muted">Reading the bill…</p>
+        </div>
+
+        <div class="panel hidden" id="dataPanel">
+          <div class="head-grid" id="headGrid"></div>
+
+          <div class="amount-row" id="amountRow"></div>
+
+          <div class="tables">
+            <div>
+              <h3>Charges</h3>
+              <table id="chargesTable"><tbody></tbody></table>
+            </div>
+            <div>
+              <h3>Taxes</h3>
+              <table id="taxesTable"><tbody></tbody></table>
+            </div>
+          </div>
+
+          <div class="notice hidden" id="noteBox"></div>
+        </div>
+
+        <div class="panel qa-panel hidden" id="qaPanel">
+          <h3>Ask about this bill</h3>
+          <div class="chips" id="qaChips"></div>
+          <form class="ask-form" id="askForm">
+            <input id="askInput" type="text" placeholder="e.g. How much of my bill is taxes?" required>
+            <button class="btn primary" type="submit">Ask</button>
+          </form>
+          <div id="qaLog"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="toasts" id="toasts"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

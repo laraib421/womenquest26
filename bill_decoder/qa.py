@@ -16,7 +16,9 @@ SYSTEM = (
     "guessing. If you must estimate, label it clearly as an estimate and explain how you got it. "
     "If the question could reasonably mean more than one thing, state which meaning you used. "
     "Do not mention names, addresses, CNIC, or account/meter numbers. Keep the answer concise (2-4 "
-    "sentences) and specific, citing exact PKR amounts and percentages where relevant."
+    "sentences) and specific, citing exact PKR amounts and percentages where relevant. "
+    "When referring to a month from usage_history or dates, write it naturally (e.g. 'July 2025'), "
+    "not in YYYY-MM form. Always answer in English, even though parts of the bill may be in Urdu."
 )
 
 

@@ -67,13 +67,19 @@ RULES (follow exactly):
   - income_tax: income tax
   - municipal_tax: municipal/local charges under taxes (e.g. KE MUCT/KMC)
   - other_tax: anything else (extra tax, further tax, TV fee)
-  If only a COMBINED tax amount is printed (no breakdown), return [] for taxes and put that amount in total_taxes.
+  IMPORTANT: If the bill shows only ONE combined tax figure (e.g. a single "Taxes" line with no
+  itemized GST/electricity-duty/municipal-tax/income-tax lines beneath it), you MUST return
+  taxes: [] (empty list) and put that single amount in total_taxes. Do NOT invent a single tax
+  entry to hold it - only use entries in taxes[] when the bill itself prints separate itemized
+  tax lines.
 - total_taxes: the printed tax subtotal, or null if none is printed.
 - current_bill: this month's bill amount as printed.
 - arrears: previous dues carried forward. Keep the printed sign. null if blank.
 - payable_within_due_date: amount payable by the due date.
 - payable_after_due_date: amount payable after the due date. If several late-payment amounts are shown
-  (e.g. 5% and 10% surcharge tiers), use the HIGHEST one.
+  (e.g. 5% and 10% surcharge tiers), use the HIGHEST one. If this field prints TEXT instead of a number
+  (e.g. "NOT TO BE PAID", blank, or a dash), return null - do NOT substitute any other amount from
+  elsewhere on the bill.
 - usage_history: the monthly usage history table/chart if present (e.g. "13 Month Usage History"), as
   [{"month": "...", "units": ...}, ...] in the order printed, oldest first. [] if not present.
   Give month as "YYYY-MM". The chart often groups bars under two year labels (e.g. "2025" then "2026")
