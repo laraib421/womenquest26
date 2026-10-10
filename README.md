@@ -55,6 +55,20 @@ python run.py all --bills test/bills \
   --level2-template test/csv/level2.csv --level2-out output/level2.csv
 ```
 
+### Optional: web UI
+
+A browser UI is included for exploring a single bill interactively, and for running
+the exact same pipeline as `run.py` with a live progress view (useful for the demo
+video — it shows the bill image, the extracted fields, Level 2 answers, and the CSVs
+being generated, all in one screen).
+
+```bash
+python -m uvicorn bill_decoder.web:app --port 8001
+```
+Then open http://127.0.0.1:8001 — "Single bill" to upload/try a bill, "Run full batch"
+to point at a bills folder + the two CSV templates and run the whole thing with a
+progress bar. This is optional; it is not required to generate the submission CSVs.
+
 ## How it works
 
 - **`llm.py`** — thin wrapper around the Gemini API (OpenAI-compatible endpoint), with
@@ -68,11 +82,17 @@ python run.py all --bills test/bills \
   data (tax %, cost per unit, late-payment surcharge, months above a usage threshold,
   month-over-month change, etc.) — calculations are done in Python, not guessed by the
   model, per the competition's recommendation.
-- **`bill_decoder/qa.py`** — Level 2: answers each question using only the extracted
-  bill data and the pre-computed facts above, so the model explains and phrases rather
-  than calculates from scratch.
+- **`bill_decoder/qa.py`** — Level 2: answers all of a bill's questions in a single
+  batched call (not one call per question — ~12x fewer API calls, well within the free
+  tier's rate limit), using only the extracted bill data and the pre-computed facts
+  above, so the model explains and phrases rather than calculates from scratch. If the
+  batch response is missing or malformed for any question, that question is retried
+  individually so no answer is ever left blank.
 - **`bill_decoder/pipeline.py`** / **`run.py`** — reads the CSV templates, runs
   extraction/Q&A per row, writes the completed CSVs with correct quoting/escaping.
+- **`bill_decoder/web.py`** + **`bill_decoder/web_static/`** — the optional web UI
+  above. **`bill_decoder/batch.py`** runs the pipeline in a background thread so the UI
+  can show live progress.
 
 Every number reported in a Level 2 answer that requires arithmetic (percentages, sums,
 counts, month-over-month changes) is computed in `stats.py`, not by the LLM, to avoid
