@@ -62,7 +62,12 @@ RULES (follow exactly):
   - other: anything else
   If the bill shows ONLY a combined total with no itemized lines, put ONE entry with the most fitting type
   (usually "energy") for that total, or if truly unclassifiable, use "other".
-- total_charges: the printed charges subtotal, or null if none is printed.
+- total_charges: the EXACT printed charges subtotal value - copy it, never compute it yourself by adding
+  up the charges[] lines (they can legitimately NOT sum to total_charges). This matters most on IESCO/LESCO
+  bills that print a "Net Electricity Charges" subtotal (= Total Electricity Charges minus Subsidies) that
+  explicitly EXCLUDES a separate "Total FPA" line shown later and added only into the payable/grand total -
+  in that layout, total_charges = that Net Electricity Charges number, even though your charges[] array
+  still includes an "fpa" entry for completeness. If no subtotal is printed at all, use null.
 - taxes: one entry per line in the tax/government section specifically (classify by SECTION, not name).
   - gst: sales tax / GST, including GST on FPA
   - electricity_duty: electricity duty (often "ED")
