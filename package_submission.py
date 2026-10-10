@@ -159,30 +159,39 @@ def main():
     args = parser.parse_args()
     check_outputs(args.level1_template, args.level2_template)
 
-    if STAGE.exists():
-        shutil.rmtree(STAGE)
-    (STAGE / "output").mkdir(parents=True)
-    (STAGE / "source").mkdir(parents=True)
+    stage = STAGE
+    if stage.exists():
+        try:
+            shutil.rmtree(stage)
+        except OSError:
+            # A previous run's staging folder is locked (commonly OneDrive still
+            # syncing it) - use a fresh, uniquely-named stage dir instead of failing.
+            i = 1
+            while (ROOT / f"_submission_stage_{i}").exists():
+                i += 1
+            stage = ROOT / f"_submission_stage_{i}"
+            print(f"(Could not remove old staging folder {STAGE.name} - using {stage.name} instead.)")
+    (stage / "output").mkdir(parents=True)
+    (stage / "source").mkdir(parents=True)
 
     for p in REQUIRED_OUTPUTS:
-        shutil.copy2(ROOT / p, STAGE / p)
+        shutil.copy2(ROOT / p, stage / p)
 
     for f in SOURCE_FILES:
         src = ROOT / f
         if src.exists():
-            shutil.copy2(src, STAGE / "source" / f)
+            shutil.copy2(src, stage / "source" / f)
         else:
             print(f"WARNING: {f} not found, skipping")
 
     for d in SOURCE_DIRS:
-        copy_tree_filtered(ROOT / d, STAGE / "source" / d)
+        copy_tree_filtered(ROOT / d, stage / "source" / d)
 
-    demo = ROOT / "demo" / "demo.mp4"
     for ext in (".mp4", ".mov", ".webm"):
         candidate = ROOT / "demo" / f"demo{ext}"
         if candidate.exists():
-            (STAGE / "demo").mkdir(exist_ok=True)
-            shutil.copy2(candidate, STAGE / "demo" / candidate.name)
+            (stage / "demo").mkdir(exist_ok=True)
+            shutil.copy2(candidate, stage / "demo" / candidate.name)
             print(f"Included demo: {candidate.name}")
             break
     else:
@@ -191,14 +200,14 @@ def main():
     if ZIP_PATH.exists():
         ZIP_PATH.unlink()
     with zipfile.ZipFile(ZIP_PATH, "w", zipfile.ZIP_DEFLATED) as zf:
-        for path in STAGE.rglob("*"):
+        for path in stage.rglob("*"):
             if path.is_file():
-                zf.write(path, path.relative_to(STAGE))
+                zf.write(path, path.relative_to(stage))
 
     try:
-        shutil.rmtree(STAGE)
+        shutil.rmtree(stage)
     except OSError:
-        print(f"(Could not remove staging folder {STAGE} - likely OneDrive syncing it. "
+        print(f"(Could not remove staging folder {stage} - likely OneDrive syncing it. "
               "Safe to delete manually; the ZIP itself is already written.)")
 
     size_mb = ZIP_PATH.stat().st_size / 1024 / 1024
