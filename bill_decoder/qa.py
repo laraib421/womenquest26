@@ -68,16 +68,21 @@ def answer_questions_batch(bill: BillExtraction, questions: list[dict]) -> dict:
     try:
         data = ask_json(prompt, system=SYSTEM_BATCH, max_tokens=4000)
         raw = data.get("answers", {}) if isinstance(data, dict) else {}
-        # Coerce every value to str: the model can return a number, null, or even a
-        # nested object for a given question id, and that must never crash the run.
-        results = {k: ("" if v is None else str(v)) for k, v in raw.items()}
+        # Only nonempty text is an answer. Retry malformed values rather than
+        # submitting a number or a Python representation of a nested object.
+        if isinstance(raw, dict):
+            results = {k: v.strip() for k, v in raw.items()
+                       if isinstance(v, str) and v.strip()}
     except Exception:
         pass  # fall through to per-question retry below for everything
 
     missing = [q for q in questions if not results.get(q["question_id"], "").strip()]
     for q in missing:
         try:
-            results[q["question_id"]] = answer_question(bill, q["question"])
+            answer = answer_question(bill, q["question"])
+            if not isinstance(answer, str) or not answer.strip():
+                raise ValueError("Single-question retry returned no text answer")
+            results[q["question_id"]] = answer.strip()
         except Exception as e:
             results[q["question_id"]] = f"Could not generate an answer ({str(e)[:100]})."
     return results

@@ -8,23 +8,102 @@ final test-data results.
 
 Usage:  python package_submission.py
 """
+import argparse
+import csv
+import json
+import math
+import re
 import shutil
 import zipfile
+from datetime import date
 from pathlib import Path
+
+from bill_decoder.schema import BillExtraction, CHARGE_TYPES, TAX_TYPES, PROVIDERS
 
 ROOT = Path(__file__).resolve().parent
 STAGE = ROOT / "_submission_stage"
 ZIP_PATH = ROOT / "submission.zip"
 
 SOURCE_FILES = [
-    "README.md", ".env.example", "requirements.txt", "llm.py", "run.py",
+    "README.md", ".env.example", "requirements.txt", "llm.py", "run.py", "package_submission.py",
 ]
 SOURCE_DIRS = ["bill_decoder"]
 EXCLUDE_DIR_NAMES = {"__pycache__"}
 REQUIRED_OUTPUTS = ["output/level1.csv", "output/level2.csv"]
 
 
-def check_outputs():
+def _read_csv(path, columns):
+    try:
+        with Path(path).open(newline="", encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            if reader.fieldnames != columns:
+                raise ValueError(f"expected columns {columns}, got {reader.fieldnames}")
+            rows = list(reader)
+            if any(set(row) != set(columns) or any(v is None for v in row.values()) for row in rows):
+                raise ValueError("row has missing or extra cells")
+            return rows
+    except (OSError, UnicodeError, csv.Error, ValueError) as e:
+        raise SystemExit(f"Invalid CSV {path}: {e}") from e
+
+
+def _default_template(name):
+    for folder in (ROOT / "data" / "test" / "csv", ROOT / "test" / "csv"):
+        if (folder / name).is_file():
+            return folder / name
+    raise SystemExit(
+        "Test templates not found. Pass --level1-template and --level2-template "
+        "with the supplied test CSV paths."
+    )
+
+
+def _validate_bill(text, bill_id):
+    try:
+        if "\n" in text or "\r" in text:
+            raise ValueError("JSON must be on one line")
+        def unique_object(pairs):
+            result = {}
+            for key, value in pairs:
+                if key in result:
+                    raise ValueError(f"duplicate JSON key: {key}")
+                result[key] = value
+            return result
+        data = json.loads(text, object_pairs_hook=unique_object)
+        if not isinstance(data, dict) or set(data) != set(BillExtraction.OFFICIAL_FIELDS):
+            raise ValueError("JSON must contain exactly the official fields")
+        if data["provider"] is not None and data["provider"] not in PROVIDERS:
+            raise ValueError("invalid provider")
+        if data["tariff"] is not None and not isinstance(data["tariff"], str):
+            raise ValueError("tariff must be text or null")
+        for key in ("bill_month", "reading_date", "issue_date", "due_date"):
+            value = data[key]
+            if value is None:
+                continue
+            pattern = r"\d{4}-\d{2}" if key == "bill_month" else r"\d{4}-\d{2}-\d{2}"
+            if not isinstance(value, str) or not re.fullmatch(pattern, value):
+                raise ValueError(f"invalid date format: {key}")
+            date.fromisoformat(value + "-01" if key == "bill_month" else value)
+        text_fields = {"provider", "tariff", "bill_month", "reading_date", "issue_date", "due_date"}
+        for key in set(BillExtraction.OFFICIAL_FIELDS) - text_fields - {"charges", "taxes"}:
+            value = data[key]
+            if value is not None and (type(value) not in (int, float) or not math.isfinite(value)):
+                raise ValueError(f"{key} must be a finite number or null")
+        for key, allowed in (("charges", CHARGE_TYPES), ("taxes", TAX_TYPES)):
+            if not isinstance(data[key], list):
+                raise ValueError(f"{key} must be a list")
+            for line in data[key]:
+                if not isinstance(line, dict) or set(line) != {"type", "amount"}:
+                    raise ValueError(f"invalid {key} entry")
+                if line["type"] not in allowed:
+                    raise ValueError(f"invalid {key} type")
+                if type(line["amount"]) not in (int, float) or not math.isfinite(line["amount"]):
+                    raise ValueError(f"invalid {key} amount")
+        if data == BillExtraction().official_json():
+            raise ValueError("null-filled extraction failure; retry this bill")
+    except (ValueError, TypeError, OverflowError) as e:
+        raise SystemExit(f"Invalid Level 1 JSON for {bill_id}: {e}") from e
+
+
+def check_outputs(level1_template=None, level2_template=None):
     missing = [p for p in REQUIRED_OUTPUTS if not (ROOT / p).exists()]
     if missing:
         raise SystemExit(
@@ -35,6 +114,35 @@ def check_outputs():
         full = ROOT / p
         if full.stat().st_size == 0:
             raise SystemExit(f"{p} is empty - did the run actually finish?")
+    columns1 = ["bill_id", "json"]
+    columns2 = ["bill_id", "question_id", "question", "answer"]
+    template1 = _read_csv(level1_template or _default_template("level1.csv"), columns1)
+    template2 = _read_csv(level2_template or _default_template("level2.csv"), columns2)
+    rows1 = _read_csv(ROOT / REQUIRED_OUTPUTS[0], columns1)
+    rows2 = _read_csv(ROOT / REQUIRED_OUTPUTS[1], columns2)
+    if len(template1) != 10 or len(template2) != 120:
+        raise SystemExit("Use the real test templates: expected 10 bills and 120 questions.")
+    ids = [r["bill_id"] for r in template1]
+    if len(set(ids)) != 10 or any(not bill_id.strip() for bill_id in ids):
+        raise SystemExit("Test Level 1 template has blank or duplicate bill IDs.")
+    expected_pairs = {(bill_id, f"Q{i}") for bill_id in ids for i in range(1, 13)}
+    if {(r["bill_id"], r["question_id"]) for r in template2} != expected_pairs:
+        raise SystemExit("Test Level 2 template must contain Q1-Q12 for every test bill.")
+    if [r["bill_id"] for r in rows1] != ids:
+        raise SystemExit("Level 1 output bill IDs/count/order do not match the test template.")
+    identity = lambda rows: [(r["bill_id"], r["question_id"], r["question"]) for r in rows]
+    if identity(rows2) != identity(template2):
+        raise SystemExit("Level 2 output IDs/questions/count/order do not match the test template.")
+    for row in rows1:
+        _validate_bill(row["json"], row["bill_id"])
+    failure_prefixes = (
+        "could not generate an answer", "sorry, this bill could not be processed",
+    )
+    for row in rows2:
+        answer = row["answer"].strip()
+        if not answer or answer.lower().startswith(failure_prefixes):
+            raise SystemExit(f"Missing/failed answer for {row['bill_id']} {row['question_id']}; retry it.")
+    print("Validated 10 test bills and 120 answers against the supplied templates.")
 
 
 def copy_tree_filtered(src: Path, dst: Path):
@@ -44,7 +152,11 @@ def copy_tree_filtered(src: Path, dst: Path):
 
 
 def main():
-    check_outputs()
+    parser = argparse.ArgumentParser(description="Validate and package WTQ test results")
+    parser.add_argument("--level1-template", help="Original test Level 1 CSV")
+    parser.add_argument("--level2-template", help="Original test Level 2 CSV")
+    args = parser.parse_args()
+    check_outputs(args.level1_template, args.level2_template)
 
     if STAGE.exists():
         shutil.rmtree(STAGE)
