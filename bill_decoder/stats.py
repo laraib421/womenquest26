@@ -6,20 +6,24 @@ from .schema import BillExtraction
 def compute_stats(bill: BillExtraction) -> dict:
     s = {}
 
-    charges_sum = sum(c.amount for c in bill.charges)
-    taxes_sum = sum(t.amount for t in bill.taxes)
-    if bill.charges:
-        s["charges_sum_from_lines"] = round(charges_sum, 2)
+    # A line's amount can be null (printed but unreadable/blank) - never let that
+    # crash the whole stats computation, just exclude it from sums/totals.
+    priced_charges = [c for c in bill.charges if c.amount is not None]
+    priced_taxes = [t for t in bill.taxes if t.amount is not None]
+    if priced_charges:
+        s["charges_sum_from_lines"] = round(sum(c.amount for c in priced_charges), 2)
         by_type = {}
-        for c in bill.charges:
+        for c in priced_charges:
             by_type[c.type] = round(by_type.get(c.type, 0) + c.amount, 2)
         s["charges_by_type"] = by_type
-    if bill.taxes:
-        s["taxes_sum_from_lines"] = round(taxes_sum, 2)
+    if priced_taxes:
+        s["taxes_sum_from_lines"] = round(sum(t.amount for t in priced_taxes), 2)
         by_type = {}
-        for t in bill.taxes:
+        for t in priced_taxes:
             by_type[t.type] = round(by_type.get(t.type, 0) + t.amount, 2)
         s["taxes_by_type"] = by_type
+    if len(priced_charges) < len(bill.charges) or len(priced_taxes) < len(bill.taxes):
+        s["note_some_line_amounts_unreadable"] = True
 
     bill_amt = bill.current_bill
     if bill_amt and bill.total_taxes is not None:

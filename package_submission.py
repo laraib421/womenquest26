@@ -95,7 +95,8 @@ def _validate_bill(text, bill_id):
                     raise ValueError(f"invalid {key} entry")
                 if line["type"] not in allowed:
                     raise ValueError(f"invalid {key} type")
-                if type(line["amount"]) not in (int, float) or not math.isfinite(line["amount"]):
+                amt = line["amount"]
+                if amt is not None and (type(amt) not in (int, float) or not math.isfinite(amt)):
                     raise ValueError(f"invalid {key} amount")
         if data == BillExtraction().official_json():
             raise ValueError("null-filled extraction failure; retry this bill")

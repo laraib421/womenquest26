@@ -10,7 +10,11 @@ TAX_TYPES = {"gst", "electricity_duty", "income_tax", "municipal_tax", "other_ta
 
 class ChargeLine(BaseModel):
     type: str
-    amount: float
+    # Optional: a line can be printed with its type but a blank/unreadable amount
+    # (grey box, smudge, cut-off scan). The competition's own rule is "null for
+    # unavailable, never guess" - so a missing amount must not crash the whole
+    # bill's extraction, which would otherwise lose every field on that bill.
+    amount: Optional[float] = None
 
     @field_validator("type", mode="before")
     @classmethod
@@ -21,7 +25,7 @@ class ChargeLine(BaseModel):
 
 class TaxLine(BaseModel):
     type: str
-    amount: float
+    amount: Optional[float] = None
 
     @field_validator("type", mode="before")
     @classmethod
@@ -58,6 +62,8 @@ class BillExtraction(BaseModel):
     # Extra fields we extract for Level 2 Q&A grounding. NOT part of the official
     # Level 1 schema — stripped before writing level1.csv.
     usage_history: List[dict] = Field(default_factory=list)  # [{"month": "Jul-25", "units": 239}, ...]
+    net_metering: Optional[str] = None  # "yes" | "no" | "unclear"
+    net_metering_evidence: Optional[str] = None
     notes: Optional[str] = None  # anything unusual noticed (e.g. multiple meters)
 
     OFFICIAL_FIELDS: ClassVar[Tuple[str, ...]] = (

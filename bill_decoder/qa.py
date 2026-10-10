@@ -37,6 +37,10 @@ SYSTEM_SINGLE = "You are a helpful customer service assistant explaining a Pakis
 def _context(bill: BillExtraction) -> str:
     data = bill.official_json()
     data["usage_history"] = bill.usage_history
+    if bill.net_metering:
+        data["net_metering"] = bill.net_metering
+        if bill.net_metering_evidence:
+            data["net_metering_evidence"] = bill.net_metering_evidence
     if bill.notes:
         data["notes"] = bill.notes
     stats = compute_stats(bill)

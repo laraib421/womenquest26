@@ -38,7 +38,9 @@ Return EXACTLY this JSON shape (every key present, even if its value is null):
   "payable_after_due_date": number,
 
   "usage_history": [ {"month": "YYYY-MM, inferred from the chart's year labels/groupings and bill_month", "units": number} ],
-  "notes": "string or null - note anything unusual, e.g. multiple meters/net metering, torn/unclear sections"
+  "net_metering": "yes | no | unclear",
+  "net_metering_evidence": "string or null - the exact printed text/labels that led to your net_metering answer",
+  "notes": "string or null - note anything unusual, e.g. torn/unclear sections"
 }
 
 RULES (follow exactly):
@@ -89,8 +91,19 @@ RULES (follow exactly):
   consumer numbers, or meter numbers anywhere in the output (most are already covered by grey boxes).
 - If there are multiple meters / net-metering readings that make previous_reading/current_reading ambiguous,
   set those two fields to null, still give your best units_consumed if determinable, and explain in "notes".
+- net_metering: look carefully for ANY sign the connection is net-metered (has solar/export capability):
+  text like "Net Metering", "NET METERING CONNECTION", "Net Metering Benefit/Credit", a "Solar" label,
+  more than one meter/reading row (e.g. separate import and export readings), or a credit line for exported
+  units. If you see any such sign, answer "yes" and quote the exact text/label in net_metering_evidence.
+  If the bill clearly looks like an ordinary single-meter connection with no such signs, answer "no". Only
+  use "unclear" if the image genuinely does not let you tell either way (e.g. that section is unreadable).
 """
 
 
 def extract_bill(image_path: str) -> BillExtraction:
-    return ask_json_vision(image_path, PROMPT, system=SYSTEM, schema=BillExtraction, max_tokens=2500, timeout=60)
+    bill = ask_json_vision(image_path, PROMPT, system=SYSTEM, schema=BillExtraction, max_tokens=2500, timeout=60)
+    # Enforce "skip lines printed as 0" in code too - the model doesn't always drop
+    # these on its own. A null amount (unreadable) is kept; an explicit 0 is dropped.
+    bill.charges = [c for c in bill.charges if c.amount != 0]
+    bill.taxes = [t for t in bill.taxes if t.amount != 0]
+    return bill
