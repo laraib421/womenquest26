@@ -44,12 +44,53 @@ def compute_stats(bill: BillExtraction) -> dict:
         s["usage_history_min"] = min(units)
         s["usage_history_max"] = max(units)
         s["usage_history_avg"] = round(sum(units) / len(units), 1)
+        s["month_with_highest_units"] = max(hist, key=lambda h: h["units"])["month"]
+        s["month_with_lowest_units"] = min(hist, key=lambda h: h["units"])["month"]
         for threshold in (100, 150, 200, 250, 300):
             above = [h["month"] for h, u in zip(hist, units) if u > threshold]
             s[f"months_above_{threshold}_units"] = {"count": len(above), "months": above}
+
+        # Seasonal split - month label is "YYYY-MM", so [5:7] is the month number as text.
+        def _season_avg(hist_list, months_set):
+            vals = [h["units"] for h in hist_list if h.get("month", "")[5:7] in months_set]
+            return round(sum(vals) / len(vals), 1) if vals else None
+
+        summer = _season_avg(hist, {"06", "07", "08"})
+        winter = _season_avg(hist, {"12", "01", "02"})
+        if summer is not None:
+            s["summer_avg_units_jun_aug"] = summer
+        if winter is not None:
+            s["winter_avg_units_dec_feb"] = winter
+        if summer is not None and winter is not None:
+            s["summer_minus_winter_units"] = round(summer - winter, 1)
+
+        if len(hist) >= 3:
+            last3 = hist[-3:]
+            s["last_3_months"] = [{"month": h["month"], "units": h["units"]} for h in last3]
+            s["last_3_months_trend"] = (
+                "increasing" if last3[-1]["units"] > last3[0]["units"]
+                else "decreasing" if last3[-1]["units"] < last3[0]["units"] else "flat"
+            )
+            # Simple moving-average projection for "next month", explicitly labelled an estimate.
+            s["projected_next_month_units_estimate"] = round(sum(h["units"] for h in last3) / 3, 1)
+
         if bill.units_consumed is not None:
             s["current_month_units"] = bill.units_consumed
             s["current_vs_history_avg_diff"] = round(bill.units_consumed - s["usage_history_avg"], 1)
+
+            # Year-over-year: same calendar month, one year earlier (matched by label, e.g.
+            # bill_month "2026-04" -> look for "2025-04" in the history).
+            if bill.bill_month and len(bill.bill_month) == 7:
+                try:
+                    yr, mo = bill.bill_month.split("-")
+                    last_year_label = f"{int(yr) - 1}-{mo}"
+                    match = next((h["units"] for h in hist if h.get("month") == last_year_label), None)
+                    if match is not None:
+                        s["same_month_last_year_units"] = match
+                        s["change_vs_same_month_last_year"] = round(bill.units_consumed - match, 1)
+                except ValueError:
+                    pass
+
             if len(units) >= 2:
                 # Decide whether the history's last entry duplicates the current bill month by
                 # comparing MONTH LABELS, not consumption values - matching on units is wrong
@@ -60,6 +101,15 @@ def compute_stats(bill: BillExtraction) -> dict:
                 s["change_vs_previous_month"] = round(bill.units_consumed - prev, 1)
                 if prev:
                     s["change_vs_previous_month_pct"] = round((bill.units_consumed - prev) / prev * 100, 1)
+                # Hypothetical "if I use the same units as last month" bill estimate.
+                if "avg_cost_per_unit_pkr" in s:
+                    s["estimated_bill_if_same_as_previous_month_pkr"] = round(prev * s["avg_cost_per_unit_pkr"], 2)
+
+        # "Spread cost evenly across the year" - average monthly cost estimate from average
+        # monthly units at the current average per-unit cost. A real tariff is tiered/non-linear,
+        # so this is explicitly an estimate, not an exact figure.
+        if "avg_cost_per_unit_pkr" in s:
+            s["estimated_avg_monthly_cost_pkr"] = round(s["usage_history_avg"] * s["avg_cost_per_unit_pkr"], 2)
 
     if bill.arrears is not None:
         s["has_outstanding_arrears"] = bill.arrears > 0
