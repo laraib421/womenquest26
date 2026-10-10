@@ -1,5 +1,6 @@
 const $ = (id) => document.getElementById(id);
 let currentBillId = null;
+let historyChart = null;
 
 function toast(msg) {
   const t = document.createElement("div");
@@ -42,8 +43,63 @@ function field(label, value) {
   return d;
 }
 
+const STAT_LABELS = {
+  taxes_pct_of_current_bill: ["Taxes % of bill", (v) => v + "%"],
+  charges_pct_of_current_bill: ["Charges % of bill", (v) => v + "%"],
+  avg_cost_per_unit_pkr: ["Avg cost / unit", (v) => "Rs " + v],
+  late_payment_surcharge_pkr: ["Late payment surcharge", (v) => money(v)],
+  usage_history_avg: ["Avg monthly units", (v) => v],
+  change_vs_previous_month_pct: ["Change vs last month", (v) => (v > 0 ? "+" : "") + v + "%"],
+};
+
+function renderStats(stats) {
+  const row = $("statRow");
+  row.innerHTML = "";
+  Object.entries(STAT_LABELS).forEach(([key, [label, format]]) => {
+    if (stats[key] === undefined || stats[key] === null) return;
+    const d = document.createElement("div");
+    d.className = "stat-tile";
+    d.innerHTML = `<small>${label}</small><b>${format(stats[key])}</b>`;
+    row.appendChild(d);
+  });
+}
+
+function renderChart(history) {
+  const box = $("chartBox");
+  if (!history || !history.length) {
+    box.classList.add("hidden");
+    return;
+  }
+  box.classList.remove("hidden");
+  if (historyChart) historyChart.destroy();
+  const labels = history.map((h) => h.month);
+  const values = history.map((h) => h.units);
+  const current = values[values.length - 1];
+  historyChart = new Chart($("historyChart"), {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        backgroundColor: values.map((v, i) => (i === values.length - 1 ? "#f5b942" : "#2dd4a7aa")),
+        borderRadius: 4,
+      }],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: "#8ba296", font: { size: 10 } }, grid: { display: false } },
+        y: { ticks: { color: "#8ba296" }, grid: { color: "#1c2622" } },
+      },
+    },
+  });
+}
+
 function renderBill(data) {
   const j = data.json;
+  $("providerBadge").textContent = j.provider || "—";
+  $("tariffBadge").textContent = j.tariff ? "Tariff " + j.tariff : "";
   const grid = $("headGrid");
   grid.innerHTML = "";
   [
@@ -69,6 +125,8 @@ function renderBill(data) {
 
   fillTable("chargesTable", j.charges, "No itemized charges printed");
   fillTable("taxesTable", j.taxes, `Combined total: ${j.total_taxes != null ? money(j.total_taxes) : "n/a"}`);
+  renderStats(data.stats || {});
+  renderChart(data.usage_history || []);
 
   if (data.notes) {
     $("noteBox").textContent = "Note: " + data.notes;
@@ -93,19 +151,22 @@ function renderBill(data) {
   $("qaPanel").classList.remove("hidden");
 }
 
-async function uploadFile(file) {
-  $("billImg").src = URL.createObjectURL(file);
+function enterLoadingState(imgSrc) {
+  $("billImg").src = imgSrc;
   $("workspace").classList.remove("hidden");
   $("uploadPanel").classList.add("hidden");
   $("loadingPanel").classList.remove("hidden");
   $("dataPanel").classList.add("hidden");
   $("qaPanel").classList.add("hidden");
+}
 
-  const fd = new FormData();
-  fd.append("file", file);
+async function finishLoading(reqPromise) {
   try {
-    const res = await fetch("/api/upload", { method: "POST", body: fd });
-    if (!res.ok) throw new Error("Upload failed (" + res.status + ")");
+    const res = await reqPromise;
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail || "Request failed (" + res.status + ")");
+    }
     const data = await res.json();
     currentBillId = data.bill_id;
     renderBill(data);
@@ -117,6 +178,39 @@ async function uploadFile(file) {
     resetUpload();
   }
 }
+
+async function uploadFile(file) {
+  enterLoadingState(URL.createObjectURL(file));
+  const fd = new FormData();
+  fd.append("file", file);
+  await finishLoading(fetch("/api/upload", { method: "POST", body: fd }));
+}
+
+async function loadSample(name) {
+  enterLoadingState(`/api/samples/${name}`);
+  await finishLoading(fetch(`/api/samples/${name}/load`, { method: "POST" }));
+}
+
+async function initSamples() {
+  try {
+    const names = await fetch("/api/samples").then((r) => r.json());
+    const box = $("sampleList");
+    box.innerHTML = "";
+    if (!names.length) { $("samplesBox").classList.add("hidden"); return; }
+    names.forEach((name) => {
+      const provider = name.split("_")[0];
+      const b = document.createElement("button");
+      b.className = "sample-chip";
+      b.type = "button";
+      b.innerHTML = `<span class="dot"></span>${provider} sample`;
+      b.onclick = () => loadSample(name);
+      box.appendChild(b);
+    });
+  } catch {
+    $("samplesBox").classList.add("hidden");
+  }
+}
+initSamples();
 
 async function askQuestion(question) {
   const log = $("qaLog");
@@ -138,7 +232,8 @@ async function askQuestion(question) {
       body: JSON.stringify({ bill_id: currentBillId, question }),
     });
     const data = await res.json();
-    aEl.textContent = data.answer || data.error || "No answer.";
+    if (!res.ok) throw new Error(data.detail || "Could not get an answer.");
+    aEl.textContent = data.answer || "No answer.";
   } catch (e) {
     aEl.textContent = "Something went wrong.";
     toast(e.message);
@@ -170,5 +265,6 @@ function resetUpload() {
   $("uploadPanel").classList.remove("hidden");
   $("fileInput").value = "";
   currentBillId = null;
+  if (historyChart) { historyChart.destroy(); historyChart = null; }
 }
 $("resetBtn").addEventListener("click", resetUpload);

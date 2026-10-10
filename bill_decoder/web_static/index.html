@@ -22,6 +22,10 @@
         <p class="muted">KE, LESCO or IESCO · PNG or JPG</p>
         <label class="btn primary">Choose file<input type="file" id="fileInput" accept=".png,.jpg,.jpeg" hidden></label>
       </div>
+      <div class="samples" id="samplesBox">
+        <p class="muted small">Or try a sample bill:</p>
+        <div class="sample-list" id="sampleList"></div>
+      </div>
     </section>
 
     <section class="workspace hidden" id="workspace">
@@ -39,9 +43,16 @@
         </div>
 
         <div class="panel hidden" id="dataPanel">
+          <div class="provider-row">
+            <span class="provider-badge" id="providerBadge">—</span>
+            <span class="tariff-badge" id="tariffBadge"></span>
+          </div>
+
           <div class="head-grid" id="headGrid"></div>
 
           <div class="amount-row" id="amountRow"></div>
+
+          <div class="stat-row" id="statRow"></div>
 
           <div class="tables">
             <div>
@@ -52,6 +63,11 @@
               <h3>Taxes</h3>
               <table id="taxesTable"><tbody></tbody></table>
             </div>
+          </div>
+
+          <div class="chart-box hidden" id="chartBox">
+            <h3>12-month usage history</h3>
+            <canvas id="historyChart" height="110"></canvas>
           </div>
 
           <div class="notice hidden" id="noteBox"></div>
@@ -71,6 +87,7 @@
   </main>
 
   <div class="toasts" id="toasts"></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>
