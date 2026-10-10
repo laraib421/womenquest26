@@ -51,7 +51,11 @@ def compute_stats(bill: BillExtraction) -> dict:
             s["current_month_units"] = bill.units_consumed
             s["current_vs_history_avg_diff"] = round(bill.units_consumed - s["usage_history_avg"], 1)
             if len(units) >= 2:
-                prev = units[-2] if hist[-1].get("units") == bill.units_consumed else units[-1]
+                # Decide whether the history's last entry duplicates the current bill month by
+                # comparing MONTH LABELS, not consumption values - matching on units is wrong
+                # whenever two different months happen to use the same number of units.
+                last_is_current = bool(bill.bill_month) and hist[-1].get("month") == bill.bill_month
+                prev = units[-2] if last_is_current else units[-1]
                 s["previous_month_units"] = prev
                 s["change_vs_previous_month"] = round(bill.units_consumed - prev, 1)
                 if prev:

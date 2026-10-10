@@ -1,8 +1,9 @@
 """Pydantic models for the Level 1 JSON output (WTQ Build Track - Utility Bill Decoder)."""
 from typing import ClassVar, List, Optional, Tuple
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
+PROVIDERS = {"KE", "LESCO", "IESCO"}
 CHARGE_TYPES = {"energy", "fixed", "fpa", "quarterly_adjustment", "surcharge", "meter_rent", "subsidy", "other"}
 TAX_TYPES = {"gst", "electricity_duty", "income_tax", "municipal_tax", "other_tax"}
 
@@ -11,10 +12,22 @@ class ChargeLine(BaseModel):
     type: str
     amount: float
 
+    @field_validator("type", mode="before")
+    @classmethod
+    def _normalize_type(cls, v):
+        v = str(v).strip().lower().replace(" ", "_").replace("-", "_")
+        return v if v in CHARGE_TYPES else "other"
+
 
 class TaxLine(BaseModel):
     type: str
     amount: float
+
+    @field_validator("type", mode="before")
+    @classmethod
+    def _normalize_type(cls, v):
+        v = str(v).strip().lower().replace(" ", "_").replace("-", "_")
+        return v if v in TAX_TYPES else "other_tax"
 
 
 class BillExtraction(BaseModel):
@@ -53,6 +66,16 @@ class BillExtraction(BaseModel):
         "charges", "total_charges", "taxes", "total_taxes", "current_bill", "arrears",
         "payable_within_due_date", "payable_after_due_date",
     )
+
+    @field_validator("provider", mode="before")
+    @classmethod
+    def _normalize_provider(cls, v):
+        if v is None:
+            return v
+        v = str(v).strip().upper()
+        aliases = {"KESC": "KE", "K-ELECTRIC": "KE", "KELECTRIC": "KE"}
+        v = aliases.get(v, v)
+        return v if v in PROVIDERS else None  # unrecognized -> null, never a guessed/invalid value
 
     def official_json(self) -> dict:
         """The exact dict the competition schema wants - no extra fields."""

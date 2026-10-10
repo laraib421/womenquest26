@@ -67,7 +67,10 @@ def answer_questions_batch(bill: BillExtraction, questions: list[dict]) -> dict:
     results: dict[str, str] = {}
     try:
         data = ask_json(prompt, system=SYSTEM_BATCH, max_tokens=4000)
-        results = dict(data.get("answers", {}))
+        raw = data.get("answers", {}) if isinstance(data, dict) else {}
+        # Coerce every value to str: the model can return a number, null, or even a
+        # nested object for a given question id, and that must never crash the run.
+        results = {k: ("" if v is None else str(v)) for k, v in raw.items()}
     except Exception:
         pass  # fall through to per-question retry below for everything
 
