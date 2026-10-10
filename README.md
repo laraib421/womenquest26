@@ -1,60 +1,92 @@
-# AI Challenge Starter (WTQ 2026)
+# WTQ Build Track — Utility Bill Decoder
 
-A small Python wrapper around **Gemini** for the Women Tech Quest 2026 "Build with AI" challenge.
+An AI assistant that reads K-Electric (KE), LESCO and IESCO electricity bills (as images)
+and (1) extracts structured billing details into JSON, and (2) answers plain-English
+customer questions about a bill, grounded in the extracted data and code-computed facts.
 
-Model: `gemini-3.5-flash-lite` (allowed model; `gemini-3.1-flash-lite` is also allowed).
+## Requirements
 
-## Project Structure
-
-```
-.
-├── llm.py            # ask() and ask_json() helpers (Gemini only)
-├── check_setup.py    # pre-event readiness check
-├── requirements.txt  # Python packages
-├── .env              # your API key (git-ignored, never submit)
-├── .env.example      # template for .env
-└── README.md
-```
+- Python 3.12 (3.11+ required)
+- A Gemini API key (free tier works — see `.env.example`)
 
 ## Setup
 
 ```bash
 python -m venv venv
-venv\Scripts\activate
+venv\Scripts\activate          # Windows
+# source venv/bin/activate     # macOS/Linux
 pip install -r requirements.txt
 ```
 
-Copy `.env.example` to `.env` and add your key from https://aistudio.google.com:
+Copy `.env.example` to `.env` and add your real API key:
 
 ```
-GEMINI_API_KEY=your_gemini_api_key
+GEMINI_API_KEY=your-real-key
 GEMINI_MODEL=gemini-3.5-flash-lite
 ```
 
-Check everything is ready:
+## Run
 
+Both commands take a folder of bill images and the competition's CSV templates, and
+write the completed CSVs. Results are cached per bill ID in `data/.cache/` so reruns
+don't repeat API calls.
+
+**Level 1 — extract bill details:**
 ```bash
-python check_setup.py
+python run.py level1 --bills <bills_folder> --template <level1_template.csv> --out output/level1.csv
 ```
 
-## Usage
-
-```python
-from llm import ask, ask_json
-
-print(ask("Explain quantum computing in one sentence."))
-
-data = ask_json("List 3 primary colors under key 'colors'")
-print(data)
+**Level 2 — answer customer questions:**
+```bash
+python run.py level2 --bills <bills_folder> --template <level2_template.csv> --out output/level2.csv
 ```
 
-`ask_json` accepts an optional pydantic model: `ask_json(prompt, schema=MyModel)`.
+**Both in one command:**
+```bash
+python run.py all --bills <bills_folder> \
+  --level1-template <level1_template.csv> --level1-out output/level1.csv \
+  --level2-template <level2_template.csv> --level2-out output/level2.csv
+```
 
-## Notes
+Example, using the competition's test folder layout:
+```bash
+python run.py all --bills test/bills \
+  --level1-template test/csv/level1.csv --level1-out output/level1.csv \
+  --level2-template test/csv/level2.csv --level2-out output/level2.csv
+```
 
-- Free tier limits: 15 requests/min, 500 requests/day.
-- Never commit `.env` or paste the key in code.
+## How it works
 
-## License
+- **`llm.py`** — thin wrapper around the Gemini API (OpenAI-compatible endpoint), with
+  text and vision calls, JSON parsing/validation, and a built-in rate limiter + retry
+  (free tier is 15 requests/min).
+- **`bill_decoder/schema.py`** — Pydantic model for the required Level 1 JSON shape.
+- **`bill_decoder/extract.py`** — Level 1: one vision call per bill reads the image and
+  returns the structured JSON directly (provider, charges, taxes, readings, etc.), plus
+  the monthly usage-history chart when present, used only internally for Level 2.
+- **`bill_decoder/stats.py`** — deterministic, code-computed facts from the extracted
+  data (tax %, cost per unit, late-payment surcharge, months above a usage threshold,
+  month-over-month change, etc.) — calculations are done in Python, not guessed by the
+  model, per the competition's recommendation.
+- **`bill_decoder/qa.py`** — Level 2: answers each question using only the extracted
+  bill data and the pre-computed facts above, so the model explains and phrases rather
+  than calculates from scratch.
+- **`bill_decoder/pipeline.py`** / **`run.py`** — reads the CSV templates, runs
+  extraction/Q&A per row, writes the completed CSVs with correct quoting/escaping.
 
-MIT License
+Every number reported in a Level 2 answer that requires arithmetic (percentages, sums,
+counts, month-over-month changes) is computed in `stats.py`, not by the LLM, to avoid
+AI arithmetic errors. The model is only asked to read the image (Level 1) and to
+explain/phrase already-computed numbers in plain English (Level 2).
+
+## AI usage
+
+- **Model used in the solution:** Google Gemini, `gemini-3.5-flash-lite`, via the
+  OpenAI-compatible endpoint (`https://generativelanguage.googleapis.com/v1beta/openai/`).
+  Used for both Level 1 (vision — reading the bill image) and Level 2 (text — phrasing
+  answers from pre-computed facts).
+- **Other AI services:** none. No OCR library, no invoice-extraction API — the model
+  reads the bill image directly.
+- **AI coding assistant used to help write this code:** Claude (Anthropic), via Claude
+  Code, used throughout development to design and write the extraction prompt, the
+  Pydantic schema, the stats calculations, the CSV pipeline, and this README.
