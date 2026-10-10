@@ -11,3 +11,5 @@ output/train_*.csv
 output/level1.csv
 output/level2.csv
 data/train/csv/
+_submission_stage/
+submission.zip
