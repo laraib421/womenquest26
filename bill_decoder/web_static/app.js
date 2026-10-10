@@ -268,3 +268,87 @@ function resetUpload() {
   if (historyChart) { historyChart.destroy(); historyChart = null; }
 }
 $("resetBtn").addEventListener("click", resetUpload);
+
+/* ---------------- Top tabs ---------------- */
+document.querySelectorAll(".top-tab").forEach((t) =>
+  t.addEventListener("click", () => {
+    document.querySelectorAll(".top-tab").forEach((x) => x.classList.toggle("active", x === t));
+    document.querySelectorAll(".page").forEach((p) => p.classList.toggle("active", p.id === "page-" + t.dataset.page));
+  }));
+
+/* ---------------- Batch run ---------------- */
+let batchPoll = null;
+
+function addLogLine(text, isErr) {
+  const log = $("batchLog");
+  const line = document.createElement("div");
+  line.className = "line" + (isErr ? " err" : "");
+  line.textContent = text;
+  log.prepend(line);
+  while (log.children.length > 300) log.removeChild(log.lastChild);
+}
+
+async function pollBatch(jobId) {
+  try {
+    const res = await fetch(`/api/batch/status/${jobId}`);
+    if (!res.ok) throw new Error("Lost track of the job.");
+    const s = await res.json();
+
+    $("l1Count").textContent = `${s.l1_done} / ${s.l1_total || "?"}`;
+    $("l2Count").textContent = `${s.l2_done} / ${s.l2_total || "?"}`;
+    $("l1Fill").style.width = s.l1_total ? (100 * s.l1_done / s.l1_total) + "%" : "0%";
+    $("l2Fill").style.width = s.l2_total ? (100 * s.l2_done / s.l2_total) + "%" : "0%";
+
+    const seen = $("batchLog").dataset.seen ? parseInt($("batchLog").dataset.seen) : 0;
+    const newLines = s.log.slice(seen);
+    newLines.forEach((l) => addLogLine(l, /FAILED/.test(l)));
+    $("batchLog").dataset.seen = s.log.length;
+
+    if (s.status === "running") {
+      $("batchStatusText").textContent = s.stage === "level1" ? "Running Level 1 extraction…" : "Running Level 2 Q&A…";
+      batchPoll = setTimeout(() => pollBatch(jobId), 1000);
+    } else if (s.status === "done") {
+      $("batchStatusText").textContent = `Done! Wrote ${s.l1_out} and ${s.l2_out}.`;
+      $("batchStartBtn").disabled = false;
+    } else if (s.status === "error") {
+      $("batchStatusText").textContent = "Failed: " + (s.error || "unknown error");
+      $("batchStartBtn").disabled = false;
+    }
+  } catch (e) {
+    toast(e.message);
+    $("batchStartBtn").disabled = false;
+  }
+}
+
+$("batchStartBtn").addEventListener("click", async () => {
+  if (batchPoll) clearTimeout(batchPoll);
+  $("batchLog").innerHTML = "";
+  $("batchLog").dataset.seen = 0;
+  $("batchProgress").classList.remove("hidden");
+  $("l1Fill").style.width = "0%";
+  $("l2Fill").style.width = "0%";
+  $("l1Count").textContent = "0 / 0";
+  $("l2Count").textContent = "0 / 0";
+  $("batchStatusText").textContent = "Starting…";
+  $("batchStartBtn").disabled = true;
+
+  try {
+    const res = await fetch("/api/batch/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        bills_dir: $("batchBills").value.trim(),
+        level1_template: $("batchL1Template").value.trim(),
+        level1_out: $("batchL1Out").value.trim(),
+        level2_template: $("batchL2Template").value.trim(),
+        level2_out: $("batchL2Out").value.trim(),
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Could not start the run.");
+    pollBatch(data.job_id);
+  } catch (e) {
+    toast(e.message);
+    $("batchStartBtn").disabled = false;
+  }
+});

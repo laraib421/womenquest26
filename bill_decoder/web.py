@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from . import batch
 from .extract import extract_bill
 from .pipeline import get_or_extract
 from .qa import answer_question
@@ -94,3 +95,37 @@ def ask(body: AskBody):
         return {"answer": answer_question(bill, body.question)}
     except Exception as e:
         raise HTTPException(502, f"Could not answer: {str(e)[:200]}")
+
+
+class BatchBody(BaseModel):
+    bills_dir: str
+    level1_template: str
+    level2_template: str
+    level1_out: str = "output/level1.csv"
+    level2_out: str = "output/level2.csv"
+
+
+def _resolve(p: str) -> str:
+    path = Path(p)
+    return str(path if path.is_absolute() else ROOT / path)
+
+
+@app.post("/api/batch/run")
+def batch_run(body: BatchBody):
+    for label, p in [("bills_dir", body.bills_dir), ("level1_template", body.level1_template),
+                      ("level2_template", body.level2_template)]:
+        if not Path(_resolve(p)).exists():
+            raise HTTPException(400, f"{label} not found: {p}")
+    job_id = batch.start_job(
+        _resolve(body.bills_dir), _resolve(body.level1_template), _resolve(body.level1_out),
+        _resolve(body.level2_template), _resolve(body.level2_out), str(ROOT / "data" / ".cache"),
+    )
+    return {"job_id": job_id}
+
+
+@app.get("/api/batch/status/{job_id}")
+def batch_status(job_id: str):
+    status = batch.get_status(job_id)
+    if not status:
+        raise HTTPException(404, "Unknown job")
+    return status

@@ -12,9 +12,14 @@
   <header class="topbar">
     <div class="brand"><span class="mark">⚡</span> Bill Decoder</div>
     <div class="sub">Upload an electricity bill · get the breakdown · ask questions</div>
+    <nav class="top-tabs">
+      <button class="top-tab active" data-page="single">Single bill</button>
+      <button class="top-tab" data-page="batch">Run full batch</button>
+    </nav>
   </header>
 
   <main>
+    <section class="page active" id="page-single">
     <section class="panel upload-panel" id="uploadPanel">
       <div class="drop" id="drop">
         <div class="bolt">⚡</div>
@@ -83,6 +88,37 @@
           <div id="qaLog"></div>
         </div>
       </div>
+    </section>
+    </section>
+
+    <section class="page" id="page-batch">
+      <section class="panel batch-panel">
+        <h2>Run the full competition pipeline</h2>
+        <p class="muted">Points at a bills folder and the two CSV templates, runs Level 1 extraction then Level 2
+          Q&amp;A for every bill, and writes both completed CSVs. Same code as <code>run.py</code>.</p>
+
+        <div class="batch-form">
+          <label>Bills folder<input id="batchBills" value="data/train/bills"></label>
+          <label>Level 1 template CSV<input id="batchL1Template" value="data/train/csv/level1.csv"></label>
+          <label>Level 1 output CSV<input id="batchL1Out" value="output/level1.csv"></label>
+          <label>Level 2 template CSV<input id="batchL2Template" value="data/train/csv/level2.csv"></label>
+          <label>Level 2 output CSV<input id="batchL2Out" value="output/level2.csv"></label>
+        </div>
+        <button class="btn primary full" id="batchStartBtn">Start run</button>
+
+        <div class="batch-progress hidden" id="batchProgress">
+          <div class="progress-block">
+            <div class="progress-label"><span>Level 1 — extracting bills</span><span id="l1Count">0 / 0</span></div>
+            <div class="progress-bar"><div class="progress-fill" id="l1Fill"></div></div>
+          </div>
+          <div class="progress-block">
+            <div class="progress-label"><span>Level 2 — answering questions</span><span id="l2Count">0 / 0</span></div>
+            <div class="progress-bar"><div class="progress-fill" id="l2Fill"></div></div>
+          </div>
+          <div class="batch-status" id="batchStatusText">Starting…</div>
+          <div class="batch-log" id="batchLog"></div>
+        </div>
+      </section>
     </section>
   </main>
 

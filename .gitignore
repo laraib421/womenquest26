@@ -8,4 +8,6 @@ data.db
 # Bill Decoder: cache and local scratch outputs (not the final submission output)
 data/.cache/
 output/train_*.csv
+output/level1.csv
+output/level2.csv
 data/train/csv/

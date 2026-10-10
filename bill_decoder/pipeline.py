@@ -3,12 +3,11 @@ Extraction results are cached to disk per bill_id so a crash or rerun doesn't
 repeat work (and doesn't burn extra API calls)."""
 import csv
 import json
-import sys
 import traceback
 from pathlib import Path
 
 from .extract import extract_bill
-from .qa import answer_question
+from .qa import answer_questions_batch
 from .schema import BillExtraction
 
 IMAGE_EXTS = (".png", ".jpg", ".jpeg")
@@ -37,7 +36,8 @@ def get_or_extract(bills_dir: Path, cache_dir: Path, bill_id: str) -> BillExtrac
     return bill
 
 
-def run_level1(bills_dir: str, template_csv: str, out_csv: str, cache_dir: str):
+def run_level1(bills_dir: str, template_csv: str, out_csv: str, cache_dir: str, on_progress=None):
+    """on_progress(done, total, bill_id, status) is called after each bill, if given."""
     bills_dir, cache_dir = Path(bills_dir), Path(cache_dir)
     with open(template_csv, newline="", encoding="utf-8-sig") as f:
         rows = list(csv.DictReader(f))
@@ -50,12 +50,17 @@ def run_level1(bills_dir: str, template_csv: str, out_csv: str, cache_dir: str):
             bill = get_or_extract(bills_dir, cache_dir, bill_id)
             out_rows.append({"bill_id": bill_id, "json": json.dumps(bill.official_json(), default=str)})
             print("ok")
+            if on_progress:
+                on_progress(i, len(rows), bill_id, "ok")
         except Exception as e:
             traceback.print_exc()
             print(f"FAILED ({e}) - writing null-filled JSON")
             blank = BillExtraction().official_json()
             out_rows.append({"bill_id": bill_id, "json": json.dumps(blank, default=str)})
+            if on_progress:
+                on_progress(i, len(rows), bill_id, f"failed: {e}")
 
+    Path(out_csv).parent.mkdir(parents=True, exist_ok=True)
     with open(out_csv, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=["bill_id", "json"])
         w.writeheader()
@@ -63,33 +68,50 @@ def run_level1(bills_dir: str, template_csv: str, out_csv: str, cache_dir: str):
     print(f"[level1] wrote {len(out_rows)} rows -> {out_csv}")
 
 
-def run_level2(bills_dir: str, template_csv: str, out_csv: str, cache_dir: str):
+def run_level2(bills_dir: str, template_csv: str, out_csv: str, cache_dir: str, on_progress=None):
+    """Batches all questions for a bill into one API call. on_progress(done_bills,
+    total_bills, bill_id, status) is called after each bill's questions are answered."""
     bills_dir, cache_dir = Path(bills_dir), Path(cache_dir)
     with open(template_csv, newline="", encoding="utf-8-sig") as f:
         rows = list(csv.DictReader(f))
 
-    bill_cache: dict[str, BillExtraction] = {}
+    by_bill: dict[str, list[dict]] = {}
+    for row in rows:
+        by_bill.setdefault(row["bill_id"].strip(), []).append(row)
+
     out_rows = []
-    for i, row in enumerate(rows, 1):
-        bill_id = row["bill_id"].strip()
-        question = row["question"]
-        print(f"[level2] {i}/{len(rows)} {bill_id} {row.get('question_id', '')} ...", end=" ", flush=True)
+    bill_ids = list(by_bill.keys())
+    for bi, bill_id in enumerate(bill_ids, 1):
+        bill_rows = by_bill[bill_id]
+        print(f"[level2] {bi}/{len(bill_ids)} {bill_id} ({len(bill_rows)} questions) ...", end=" ", flush=True)
         try:
-            if bill_id not in bill_cache:
-                bill_cache[bill_id] = get_or_extract(bills_dir, cache_dir, bill_id)
-            answer = answer_question(bill_cache[bill_id], question)
+            bill = get_or_extract(bills_dir, cache_dir, bill_id)
+            questions = [{"question_id": r.get("question_id", ""), "question": r["question"]} for r in bill_rows]
+            answers = answer_questions_batch(bill, questions)
+            for r in bill_rows:
+                out_rows.append({
+                    "bill_id": bill_id,
+                    "question_id": r.get("question_id", ""),
+                    "question": r["question"],
+                    "answer": answers.get(r.get("question_id", ""), "Could not generate an answer."),
+                })
             print("ok")
+            if on_progress:
+                on_progress(bi, len(bill_ids), bill_id, "ok")
         except Exception as e:
             traceback.print_exc()
-            answer = "Sorry, this bill could not be processed, so this question cannot be answered."
             print(f"FAILED ({e})")
-        out_rows.append({
-            "bill_id": bill_id,
-            "question_id": row.get("question_id", ""),
-            "question": question,
-            "answer": answer,
-        })
+            for r in bill_rows:
+                out_rows.append({
+                    "bill_id": bill_id,
+                    "question_id": r.get("question_id", ""),
+                    "question": r["question"],
+                    "answer": "Sorry, this bill could not be processed, so this question cannot be answered.",
+                })
+            if on_progress:
+                on_progress(bi, len(bill_ids), bill_id, f"failed: {e}")
 
+    Path(out_csv).parent.mkdir(parents=True, exist_ok=True)
     with open(out_csv, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=["bill_id", "question_id", "question", "answer"])
         w.writeheader()
